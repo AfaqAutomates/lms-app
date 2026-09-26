@@ -179,7 +179,7 @@ function openModal(title, bodyEl, onSave, saveLabel){
 function renderDashboard(){
   const page = document.getElementById('page');
   const head = el('div','page-head');
-  head.appendChild(el('div',null,'<h1>Welcome back, '+ (me.name||'').split(' ')[0] +'!</h1><div class="page-sub">Riverside Plant — Lubrication Management &amp; Reliability</div>'));
+  head.appendChild(el('div',null,'<h1>Welcome back, '+ (me.name||'').split(' ')[0] +'!</h1><div class="page-sub">Plant — Lubrication Management &amp; Reliability</div>'));
   page.appendChild(head);
 
   const kpis = el('div','kpi-grid');
