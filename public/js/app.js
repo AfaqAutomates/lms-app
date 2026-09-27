@@ -3,6 +3,14 @@ const sb = window.supabase.createClient(window.LMS_CONFIG.SUPABASE_URL, window.L
 const ACTIVITY_TYPES = ['Top-up','Oil replacement','Drain and refill','Greasing','Lubricant replenishment',
   'Filter replacement','Sampling','Inspection','Flushing','Corrective lubrication','Emergency lubrication','Other'];
 
+const STATUS_OPTIONS = ['Active','Inactive'];
+const CRITICALITY_OPTIONS = ['High','Medium','Low'];
+const LUBRICATION_TYPES = [
+  'Grease','Oil','Oil Bath','Oil Circulation','Oil Mist','Splash Lubrication',
+  'Chain Lubrication','Dry Lubrication','Automatic Lubrication','Manual Lubrication',
+  'Centralized Lubrication','Air-Oil','Other'
+];
+
 const PAGES = [
   {id:'dashboard', label:'Dashboard', icon:'dashboard'},
   {id:'assets', label:'Assets', icon:'assets'},
@@ -271,9 +279,8 @@ const MASTER_CONFIG = {
     fields: [
       ['sap_equipment_number','SAP Equipment #',1],['description','Description',1],
       ['functional_location','Functional Location'],['plant','Plant'],['area','Area'],
-      ['equipment_type','Equipment Type'],['manufacturer','Manufacturer'],['model','Model'],
-      ['serial_number','Serial Number'],['status','Status (Active/Inactive)'],
-      ['criticality','Lubrication Criticality'],['notes','Lubrication Notes',0,'textarea'],
+      ['equipment_type','Equipment Type'],['status','Status (Active/Inactive)','select-status'],
+      ['criticality','Lubrication Criticality','select-criticality'],['notes','Lubrication Notes',0,'textarea'],
     ],
   },
 };
@@ -324,6 +331,13 @@ function renderMasterPage(kind){
   });
   wrap.appendChild(t); card.appendChild(wrap); page.appendChild(card);
 }
+function makeSelect(options, value){
+  const sel = el('select');
+  sel.appendChild(el('option',null,'— select —'));
+  options.forEach(v=>{ const o=el('option',null,v); o.value=v; sel.appendChild(o); });
+  sel.value=value||'';
+  return sel;
+}
 function openMasterModal(kind, edit){
   const cfg = MASTER_CONFIG[kind];
   const body = el('div');
@@ -332,8 +346,12 @@ function openMasterModal(kind, edit){
   cfg.fields.forEach(([key,label,req,type])=>{
     const w = el('div');
     w.appendChild(el('label','field-label', label+(req?' *':'')));
-    const inp = type==='textarea' ? el('textarea') : el('input');
-    inp.value = edit ? (edit[key]||'') : '';
+    let inp;
+    if(type==='textarea') inp=el('textarea');
+    else if(type==='select-status') inp=makeSelect(STATUS_OPTIONS, edit ? edit[key] : 'Active');
+    else if(type==='select-criticality') inp=makeSelect(CRITICALITY_OPTIONS, edit ? edit[key] : '');
+    else inp=el('input');
+    if(!['textarea','select-status','select-criticality'].includes(type)) inp.value = edit ? (edit[key]||'') : '';
     w.appendChild(inp); inputs[key]=inp; grid.appendChild(w);
   });
   body.appendChild(grid);
@@ -343,7 +361,7 @@ function openMasterModal(kind, edit){
     if(missing){ alert('Please fill required fields (*)'); return false; }
     data.updated_at = new Date().toISOString(); data.updated_by = me.id;
     try{
-      if(edit){ const {error}=await sb.from(cfg.table).update(data).eq('id',edit.id); if(error) throw error; }
+      if(edit){ const {error} = await sb.from(cfg.table).update(data).eq('id',edit.id); if(error) throw error; }
       else { data.created_by=me.id; const {error}=await sb.from(cfg.table).insert(data); if(error) throw error; }
     }catch(e){ alert('Save failed: '+e.message); return false; }
     await loadAll(); render();
@@ -420,66 +438,233 @@ function renderPointsPage(){
   }
   page.appendChild(card);
 }
-function equipmentSelect(value){
-  const sel = el('select');
-  sel.appendChild(el('option','', '— select —'));
-  cache.equipment.forEach(e=>{ const o=el('option',null,e.sap_equipment_number+' — '+(e.description||'')); o.value=e.sap_equipment_number; sel.appendChild(o); });
-  sel.value = value||''; return sel;
+function setupAutocomplete(input, options, onSelect, placeholder){
+  const wrap = el('div','autocomplete');
+  input.classList.add('autocomplete-input');
+  if(placeholder) input.placeholder=placeholder;
+  const menu=el('div','autocomplete-menu');
+  wrap.appendChild(input); wrap.appendChild(menu);
+
+  let selected=false;
+  let current=[];
+  function renderMatches(){
+    const q=input.value.trim().toLowerCase();
+    current = options.filter(x=>x.label.toLowerCase().includes(q)).slice(0,12);
+    menu.innerHTML='';
+    if(!q || !current.length){ menu.style.display='none'; return; }
+    current.forEach(item=>{
+      const row=el('button','autocomplete-option');
+      row.type='button'; row.textContent=item.label;
+      row.onclick=()=>{
+        input.value=item.label;
+        selected=true;
+        onSelect(item);
+        menu.style.display='none';
+      };
+      menu.appendChild(row);
+    });
+    menu.style.display='block';
+  }
+  input.addEventListener('input',()=>{ selected=false; onSelect(null); renderMatches(); });
+  input.addEventListener('focus',()=>{ if(input.value.trim()) renderMatches(); });
+  document.addEventListener('click',e=>{ if(!wrap.contains(e.target)) menu.style.display='none'; });
+  return {wrap, get selected(){return selected;}};
+}
+function equipmentOptions(){
+  return cache.equipment.map(e=>({
+    value:e.sap_equipment_number,
+    label:e.sap_equipment_number+' — '+(e.description||'')
+  }));
+}
+function addEquipmentAutocomplete(parent, value, onChange){
+  const input=el('input');
+  let selected=null;
+  const ac=setupAutocomplete(input,equipmentOptions(),item=>{
+    selected=item;
+    onChange(item ? item.value : '');
+  },'Type SAP Equipment # to search…');
+  const match=cache.equipment.find(e=>e.sap_equipment_number===value);
+  if(match){ input.value=match.sap_equipment_number+' — '+(match.description||''); selected={value:match.sap_equipment_number}; }
+  parent.appendChild(ac.wrap);
+  return {input, get value(){return selected ? selected.value : '';}, set value(v){
+    const m=cache.equipment.find(e=>e.sap_equipment_number===v);
+    selected=m?{value:m.sap_equipment_number}:null;
+    input.value=m?m.sap_equipment_number+' — '+(m.description||''):'';
+  }};
+}
+function addEquipmentField(body, value, required, onChange){
+  const wrap=el('div');
+  wrap.appendChild(el('label','field-label','SAP Equipment #'+(required?' *':'')));
+  const field=addEquipmentAutocomplete(wrap,value,onChange);
+  body.appendChild(wrap);
+  return field;
+}
+function componentOptionsForEquipment(equipmentNumber){
+  return cache.components
+    .filter(c=>!equipmentNumber || c.equipment_number===equipmentNumber)
+    .map(c=>({value:c.name,label:c.name}));
+}
+function suggestionOptions(field, currentValue){
+  const seen=new Set();
+  const out=[];
+  cache.components.map(c=>field==='type'?c.type:c.name).concat(
+    field==='point_name' ? cache.points.map(p=>p.point_name) : []
+  ).filter(Boolean).forEach(v=>{
+    const key=v.trim().toLowerCase();
+    if(!seen.has(key)){ seen.add(key); out.push({value:v,label:v}); }
+  });
+  return out;
+}
+function addFreeTextSuggestion(parent, label, value, field, onChange, required){
+  const w=el('div');
+  w.appendChild(el('label','field-label',label+(required?' *':'')));
+  const input=el('input'); input.value=value||'';
+  const opts=suggestionOptions(field,value);
+  const ac=setupAutocomplete(input,opts,item=>onChange(item?item.value:input.value), 'Type or choose a previous value…');
+  w.appendChild(ac.wrap); parent.appendChild(w);
+  input.addEventListener('input',()=>onChange(input.value));
+  return input;
+}
+function addComponentAutocomplete(parent, equipmentNumber, value, onChange, required){
+  const w=el('div');
+  w.appendChild(el('label','field-label','Component Name'+(required?' *':'')));
+  const input=el('input');
+  const opts=componentOptionsForEquipment(equipmentNumber);
+  const ac=setupAutocomplete(input,opts,item=>onChange(item?item.value:null),'Type to search components…');
+  const existing=opts.find(x=>x.value===value);
+  if(existing){ input.value=existing.label; onChange(existing.value); }
+  w.appendChild(ac.wrap); parent.appendChild(w);
+  return {input, get value(){ return opts.some(x=>x.value===input.value) ? input.value : ''; }};
+}
+function addLubricantField(parent, value, onChange){
+  const w=el('div');
+  const line=el('div','field-label-row');
+  line.appendChild(el('label','field-label','Lubricant'));
+  const sel=el('select');
+  function populate(selected){
+    sel.innerHTML='';
+    sel.appendChild(el('option',null,'— select lubricant —'));
+    cache.lubricants.filter(l=>l.status!=='Inactive').forEach(l=>{
+      const o=el('option',null,(l.brand?l.brand+' ':'')+l.product_name);
+      o.value=l.product_name; sel.appendChild(o);
+    });
+    sel.value=selected||'';
+  }
+  if(hasFeature('inventory.edit')){
+    const add=el('button','link-btn','+ Add lubricant');
+    add.type='button';
+    add.onclick=()=>openLubricantModal(null, async()=>{
+      const selected=sel.value;
+      populate(selected);
+    });
+    line.appendChild(add);
+  }
+  w.appendChild(line);
+  populate(value);
+  w.appendChild(sel); parent.appendChild(w);
+  sel.onchange=()=>onChange(sel.value);
+  return sel;
 }
 function openPointModal(edit){
-  const fields = [
-    ['component_name','Component Name'],['point_name','Point Name',1],['lubrication_type','Lubrication Type'],
-    ['lubricant_name','Lubricant'],['required_quantity','Required Qty'],['uom','UOM'],['frequency','Frequency (text)'],
-    ['running_hour_interval','Running-Hour Interval'],['calendar_interval','Calendar Interval (months)'],
-    ['status','Status (Active/Inactive)'],['special_instructions','Special Instructions',0,'textarea'],
-  ];
-  const body = el('div');
-  const eqWrap = el('div'); eqWrap.appendChild(el('label','field-label','SAP Equipment # *'));
-  const eqSel = equipmentSelect(edit?edit.equipment_number:''); eqWrap.appendChild(eqSel); body.appendChild(eqWrap);
-  const grid = el('div','grid2'); const inputs = {};
-  fields.forEach(([key,label,req,type])=>{
-    const w = el('div'); w.appendChild(el('label','field-label', label+(req?' *':'')));
-    const inp = type==='textarea' ? el('textarea') : el('input');
-    inp.value = edit ? (edit[key]||'') : ''; w.appendChild(inp); inputs[key]=inp; grid.appendChild(w);
+  const body=el('div');
+  let equipmentNumber=edit?edit.equipment_number:'';
+  const eqField=addEquipmentField(body,equipmentNumber,true,v=>{
+    equipmentNumber=v||'';
+    if(compField) rebuildComponentField();
   });
+
+  const grid=el('div','grid2');
+  const inputs={};
+  let componentName=edit?edit.component_name:'';
+  let compField=null;
+  function rebuildComponentField(){
+    const old=grid.querySelector('[data-component-field]');
+    if(old) old.remove();
+    const holder=el('div'); holder.dataset.componentField='1';
+    const f=addComponentAutocomplete(holder,equipmentNumber,componentName,v=>{componentName=v||'';},true);
+    compField=f;
+    grid.insertBefore(holder,grid.firstChild);
+  }
+  rebuildComponentField();
+
+  const pointW=el('div');
+  pointW.appendChild(el('label','field-label','Point Name *'));
+  const pointInput=el('input'); pointInput.value=edit?edit.point_name:'';
+  const pointAc=setupAutocomplete(pointInput,suggestionOptions('point_name',''),item=>{
+    pointInput.value=item?item.value:pointInput.value;
+  },'Type or choose a previous point name…');
+  pointW.appendChild(pointAc.wrap); grid.appendChild(pointW);
+
+  const lubTypeW=el('div'); lubTypeW.appendChild(el('label','field-label','Lubrication Type'));
+  const lubType=makeSelect(LUBRICATION_TYPES,edit?edit.lubrication_type:''); lubTypeW.appendChild(lubType); grid.appendChild(lubTypeW);
+
+  const lubW=addLubricantField(grid,edit?edit.lubricant_name:'',()=>{});
+  const simpleFields=[
+    ['required_quantity','Required Qty'],['uom','UOM'],['frequency','Frequency (text)'],
+    ['running_hour_interval','Running-Hour Interval'],['calendar_interval','Calendar Interval (months)']
+  ];
+  simpleFields.forEach(([key,label])=>{
+    const w=el('div'); w.appendChild(el('label','field-label',label));
+    const inp=el('input'); inp.value=edit?(edit[key]||''):''; w.appendChild(inp); inputs[key]=inp; grid.appendChild(w);
+  });
+  const statusW=el('div'); statusW.appendChild(el('label','field-label','Status (Active/Inactive)'));
+  const status=makeSelect(STATUS_OPTIONS,edit?edit.status:'Active'); statusW.appendChild(status); grid.appendChild(statusW);
+  const critW=el('div'); critW.appendChild(el('label','field-label','Criticality'));
+  const crit=makeSelect(CRITICALITY_OPTIONS,edit?edit.criticality:''); critW.appendChild(crit); grid.appendChild(critW);
+  const instW=el('div'); instW.appendChild(el('label','field-label','Special Instructions'));
+  const inst=el('textarea'); inst.value=edit?(edit.special_instructions||''):''; instW.appendChild(inst); grid.appendChild(instW);
   body.appendChild(grid);
-  openModal(edit?'Edit lubrication point':'Add lubrication point', body, async ()=>{
-    if(!eqSel.value){ alert('Select an asset.'); return false; }
-    const data={equipment_number:eqSel.value}; let missing=false;
-    fields.forEach(([key,label,req])=>{ const v=inputs[key].value.trim(); if(req&&!v)missing=true; data[key]=v; });
-    if(missing){ alert('Please fill required fields (*)'); return false; }
+
+  openModal(edit?'Edit lubrication point':'Add lubrication point',body,async()=>{
+    if(!eqField.value){alert('Select an SAP Equipment # from the suggestions.');return false;}
+    if(!componentName || !cache.components.some(c=>c.equipment_number===eqField.value && c.name===componentName)){
+      alert('Select a Component Name that belongs to the selected equipment.'); return false;
+    }
+    if(!pointInput.value.trim()){alert('Please enter a Point Name.');return false;}
+    const data={equipment_number:eqField.value,component_name:componentName,point_name:pointInput.value.trim(),
+      lubrication_type:lubType.value,lubricant_name:lubW.value,criticality:crit.value,status:status.value,
+      special_instructions:inst.value.trim()};
+    simpleFields.forEach(([key])=>data[key]=inputs[key].value.trim());
     data.updated_at=new Date().toISOString(); data.updated_by=me.id;
     try{
-      if(edit){ const {error}=await sb.from('lubrication_points').update(data).eq('id',edit.id); if(error) throw error; }
-      else { data.created_by=me.id; const {error}=await sb.from('lubrication_points').insert(data); if(error) throw error; }
-    }catch(e){ alert('Save failed: '+e.message); return false; }
-    await loadAll(); render();
+      if(edit){const {error}=await sb.from('lubrication_points').update(data).eq('id',edit.id);if(error)throw error;}
+      else{data.created_by=me.id;const {error}=await sb.from('lubrication_points').insert(data);if(error)throw error;}
+    }catch(e){alert('Save failed: '+e.message);return false;}
+    await loadAll();render();
   });
 }
 function openComponentModal(edit){
-  const fields = [['name','Component Name',1],['type','Component Type'],['description','Description'],
-    ['criticality','Criticality'],['status','Status (Active/Inactive)'],['remarks','Remarks',0,'textarea']];
-  const body = el('div');
-  const eqWrap = el('div'); eqWrap.appendChild(el('label','field-label','SAP Equipment # *'));
-  const eqSel = equipmentSelect(edit?edit.equipment_number:''); eqWrap.appendChild(eqSel); body.appendChild(eqWrap);
-  const grid = el('div','grid2'); const inputs = {};
-  fields.forEach(([key,label,req,type])=>{
-    const w = el('div'); w.appendChild(el('label','field-label', label+(req?' *':'')));
-    const inp = type==='textarea' ? el('textarea') : el('input');
-    inp.value = edit ? (edit[key]||'') : ''; w.appendChild(inp); inputs[key]=inp; grid.appendChild(w);
+  const body=el('div');
+  let equipmentNumber=edit?edit.equipment_number:'';
+  const eqField=addEquipmentField(body,equipmentNumber,true,v=>{
+    equipmentNumber=v||'';
   });
+  const grid=el('div','grid2');
+  let name=edit?edit.name:'';
+  const nameW=el('div'); nameW.appendChild(el('label','field-label','Component Name *'));
+  const nameInput=el('input'); nameInput.value=name; nameW.appendChild(nameInput); grid.appendChild(nameW);
+  const typeW=el('div'); typeW.appendChild(el('label','field-label','Component Type'));
+  const typeInput=el('input'); typeInput.value=edit?(edit.type||''):'';
+  const typeAc=setupAutocomplete(typeInput,suggestionOptions('type',''),item=>{if(item)typeInput.value=item.value;},'Type or choose a previous component type…');
+  typeW.appendChild(typeAc.wrap); grid.appendChild(typeW);
+  const critW=el('div'); critW.appendChild(el('label','field-label','Criticality'));
+  const crit=makeSelect(CRITICALITY_OPTIONS,edit?edit.criticality:''); critW.appendChild(crit); grid.appendChild(critW);
+  const statusW=el('div'); statusW.appendChild(el('label','field-label','Status (Active/Inactive)'));
+  const status=makeSelect(STATUS_OPTIONS,edit?edit.status:'Active'); statusW.appendChild(status); grid.appendChild(statusW);
+  const remW=el('div'); remW.appendChild(el('label','field-label','Remarks'));
+  const rem=el('textarea'); rem.value=edit?(edit.remarks||''):''; remW.appendChild(rem); grid.appendChild(remW);
   body.appendChild(grid);
-  openModal(edit?'Edit component':'Add component', body, async ()=>{
-    if(!eqSel.value){ alert('Select an asset.'); return false; }
-    const data={equipment_number:eqSel.value}; let missing=false;
-    fields.forEach(([key,label,req])=>{ const v=inputs[key].value.trim(); if(req&&!v)missing=true; data[key]=v; });
-    if(missing){ alert('Please fill required fields (*)'); return false; }
-    data.updated_at=new Date().toISOString(); data.updated_by=me.id;
+  openModal(edit?'Edit component':'Add component',body,async()=>{
+    if(!eqField.value){alert('Select an SAP Equipment # from the suggestions.');return false;}
+    if(!nameInput.value.trim()){alert('Please enter a Component Name.');return false;}
+    const data={equipment_number:eqField.value,name:nameInput.value.trim(),type:typeInput.value.trim(),
+      criticality:crit.value,status:status.value,remarks:rem.value.trim()};
+    data.updated_at=new Date().toISOString();data.updated_by=me.id;
     try{
-      if(edit){ const {error}=await sb.from('components').update(data).eq('id',edit.id); if(error) throw error; }
-      else { data.created_by=me.id; const {error}=await sb.from('components').insert(data); if(error) throw error; }
-    }catch(e){ alert('Save failed: '+e.message); return false; }
-    await loadAll(); render();
+      if(edit){const {error}=await sb.from('components').update(data).eq('id',edit.id);if(error)throw error;}
+      else{data.created_by=me.id;const {error}=await sb.from('components').insert(data);if(error)throw error;}
+    }catch(e){alert('Save failed: '+e.message);return false;}
+    await loadAll();render();
   });
 }
 
@@ -615,7 +800,7 @@ function renderInventory(){
   });
   wrap.appendChild(t); card.appendChild(wrap); page.appendChild(card);
 }
-function openLubricantModal(edit){
+function openLubricantModal(edit, afterSave){
   const fields = [
     ['brand','Brand',1],['product_name','Product Name',1],['lubricant_type','Lubricant Type'],['base_oil','Base Oil'],
     ['iso_vg','ISO VG'],['nlgi_grade','NLGI Grade'],['manufacturer','Manufacturer'],['uom','UOM'],
@@ -637,7 +822,7 @@ function openLubricantModal(edit){
       if(edit){ const {error}=await sb.from('lubricants').update(data).eq('id',edit.id); if(error) throw error; }
       else { data.created_by=me.id; const {error}=await sb.from('lubricants').insert(data); if(error) throw error; }
     }catch(e){ alert('Save failed: '+e.message); return false; }
-    await loadAll(); render();
+    await loadAll(); if(afterSave) await afterSave(); else render();
   });
 }
 
