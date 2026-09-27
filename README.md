@@ -115,6 +115,52 @@ becomes a slide-out drawer (tap the menu icon).
   language, clearly labeled with which phase brings them to life
 
 
+## Stage A update — admin-only accounts, feature toggles
+
+This adds real Admin Portal foundations: no self-signup, a seeded
+Administrator account, and per-user feature toggles (replacing the old
+role system). Three things to do, once:
+
+### A1. Run the migration
+In Supabase SQL Editor, run `db/migrations/002_admin_auth_and_features.sql`
+(after the original `db/schema.sql`, which you've already run). This:
+- adds `is_admin` + `email` to profiles
+- creates `features` / `user_features` tables and the permission functions
+- rewrites the masters' security rules to check per-user feature toggles
+- seeds the admin account: **admin@lubrication.com / Admin@123**
+
+**Change that password immediately after your first login** — it sits in
+this SQL file in plain text (that's what was asked for; just don't leave
+it that way).
+
+### A2. Turn off self-signup in Supabase
+Dashboard → **Authentication → Sign In / Providers** (or **Authentication →
+Settings**, layout varies) → find **"Allow new users to sign up"** → turn
+it **off**. This is a dashboard setting, not something the SQL/code can
+control.
+
+### A3. Deploy the admin-create-user Edge Function
+This is the one piece that needs elevated privileges (creating a login for
+someone), so it runs as a small serverless function rather than in the
+browser. Easiest path — no command line needed:
+1. Supabase Dashboard → **Edge Functions** → **"Deploy a new function"**.
+2. Name it exactly `admin-create-user`.
+3. Paste in the contents of `supabase/functions/admin-create-user/index.ts`.
+4. Deploy. Supabase automatically provides the service-role key as an
+   environment secret inside the function — you don't paste it anywhere.
+
+(If you'd rather use the CLI: `supabase functions deploy admin-create-user`
+after `supabase login` and `supabase link`.)
+
+### What changes for your team
+- Log in as `admin@lubrication.com` / `Admin@123` first.
+- Go to **Settings** → create real user accounts (no one else can sign
+  themselves up).
+- For each user, click **"Manage access"** and toggle on whatever they
+  should be able to do — everyone starts with nothing enabled.
+- Everyone (including the admin) can change their own password anytime via
+  **"Change password"** in the top bar.
+
 ## What's next
 Matches the phase plan already agreed:
 - Running hours (history, anomaly detection, replacement-due calculations)

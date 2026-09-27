@@ -1,7 +1,5 @@
 const sb = window.supabase.createClient(window.LMS_CONFIG.SUPABASE_URL, window.LMS_CONFIG.SUPABASE_ANON_KEY);
 
-const ROLES = ['Technician','Supervisor','Engineer','Storekeeper','Procurement User','Manager','Administrator'];
-const EDIT_ROLES = ['Engineer','Administrator'];
 const ACTIVITY_TYPES = ['Top-up','Oil replacement','Drain and refill','Greasing','Lubricant replenishment',
   'Filter replacement','Sampling','Inspection','Flushing','Corrective lubrication','Emergency lubrication','Other'];
 
@@ -20,9 +18,10 @@ const PAGES = [
 
 let active = 'dashboard';
 let session = null;
-let me = {id:null, name:''};
-let myRole = null;
-let cache = {equipment:[], components:[], points:[], lubricants:[], activities:[], roles:[], profiles:{}};
+let me = {id:null, name:'', isAdmin:false};
+let myFeatures = new Set();
+let allFeatures = [];
+let cache = {equipment:[], components:[], points:[], lubricants:[], activities:[], profiles:{}};
 let editing = {};
 let workOrderFilter = '';
 let inventorySubtab = 'lubricants';
@@ -46,17 +45,24 @@ async function init(){
     const {error} = await sb.auth.signInWithPassword({email, password});
     if(error) showAuthError(error.message);
   };
-  document.getElementById('btnSignUp').onclick = async ()=>{
-    const email = document.getElementById('authEmail').value.trim();
-    const password = document.getElementById('authPassword').value;
-    const full_name = document.getElementById('authName').value.trim();
-    const {error} = await sb.auth.signUp({email, password, options:{data:{full_name}}});
-    if(error) showAuthError(error.message);
-    else showAuthError('Check your email to confirm your account, then sign in.', true);
-  };
   document.getElementById('btnSignOut').onclick = async ()=>{ await sb.auth.signOut(); };
+  document.getElementById('btnChangePw').onclick = openChangePasswordModal;
   document.getElementById('hamburger').onclick = ()=>document.body.classList.toggle('drawer-open');
   document.getElementById('backdrop').onclick = ()=>document.body.classList.remove('drawer-open');
+}
+function openChangePasswordModal(){
+  const body = el('div');
+  const w1 = el('div'); w1.appendChild(el('label','field-label','New password (min 8 characters)'));
+  const p1 = el('input'); p1.type='password'; w1.appendChild(p1); body.appendChild(w1);
+  const w2 = el('div'); w2.appendChild(el('label','field-label','Confirm new password'));
+  const p2 = el('input'); p2.type='password'; w2.appendChild(p2); body.appendChild(w2);
+  openModal('Change password', body, async ()=>{
+    if(p1.value.length<8){ alert('Password must be at least 8 characters.'); return false; }
+    if(p1.value!==p2.value){ alert('Passwords do not match.'); return false; }
+    const {error} = await sb.auth.updateUser({password:p1.value});
+    if(error){ alert('Failed: '+error.message); return false; }
+    alert('Password changed.');
+  }, 'Change password');
 }
 function showAuthError(msg, ok){
   const el = document.getElementById('authError');
@@ -73,37 +79,37 @@ async function route(){
   document.getElementById('authScreen').style.display='none';
   document.getElementById('appScreen').style.display='block';
   me.id = session.user.id;
-  const {data:prof} = await sb.from('profiles').select('full_name').eq('id', me.id).maybeSingle();
+  const {data:prof} = await sb.from('profiles').select('full_name, is_admin').eq('id', me.id).maybeSingle();
   me.name = (prof && prof.full_name) ? prof.full_name : session.user.email;
+  me.isAdmin = !!(prof && prof.is_admin);
   document.getElementById('tbName').textContent = me.name;
   document.getElementById('tbAvatar').textContent = (me.name||'?').trim().slice(0,1).toUpperCase();
   buildSidebar();
   await loadAll();
-  document.getElementById('tbRole').textContent = myRole || 'No role assigned';
+  document.getElementById('tbRole').textContent = me.isAdmin ? 'Administrator' : (myFeatures.size ? [...myFeatures].join(', ') : 'No access assigned');
   render();
 }
 
 // ============================== DATA ==============================
 async function loadAll(){
-  const [eq, comp, pts, lub, act, roles] = await Promise.all([
+  const [eq, comp, pts, lub, act, feats, myFeats] = await Promise.all([
     sb.from('equipment').select('*').order('created_at',{ascending:false}),
     sb.from('components').select('*').order('created_at',{ascending:false}),
     sb.from('lubrication_points').select('*').order('created_at',{ascending:false}),
     sb.from('lubricants').select('*').order('created_at',{ascending:false}),
     sb.from('activities').select('*').order('activity_date',{ascending:false}),
-    sb.from('user_roles').select('*'),
+    sb.from('features').select('*').order('module'),
+    sb.from('user_features').select('feature_key').eq('user_id', me.id).eq('enabled', true),
   ]);
   cache.equipment = eq.data || [];
   cache.components = comp.data || [];
   cache.points = pts.data || [];
   cache.lubricants = lub.data || [];
   cache.activities = act.data || [];
-  cache.roles = roles.data || [];
-  const mine = cache.roles.find(r=>r.user_id===me.id);
-  myRole = mine ? mine.role : null;
+  allFeatures = feats.data || [];
+  myFeatures = new Set((myFeats.data||[]).map(f=>f.feature_key));
 
   const ids = new Set();
-  cache.roles.forEach(r=>ids.add(r.user_id));
   [...cache.equipment, ...cache.components, ...cache.points, ...cache.lubricants, ...cache.activities].forEach(r=>{
     if(r.created_by) ids.add(r.created_by); if(r.updated_by) ids.add(r.updated_by);
   });
@@ -113,8 +119,8 @@ async function loadAll(){
   }
 }
 function personName(id){ return cache.profiles[id] || (id ? 'Unknown user' : '—'); }
-function canEditMasters(){ return myRole && EDIT_ROLES.includes(myRole); }
-function canManageUsers(){ return myRole === 'Administrator'; }
+function hasFeature(key){ return me.isAdmin || myFeatures.has(key); }
+function isAdmin(){ return me.isAdmin; }
 
 // ============================== SHELL / ROUTER ==============================
 function buildSidebar(){
@@ -179,7 +185,7 @@ function openModal(title, bodyEl, onSave, saveLabel){
 function renderDashboard(){
   const page = document.getElementById('page');
   const head = el('div','page-head');
-  head.appendChild(el('div',null,'<h1>Welcome back, '+ (me.name||'').split(' ')[0] +'!</h1><div class="page-sub">Plant — Lubrication Management &amp; Reliability</div>'));
+  head.appendChild(el('div',null,'<h1>Welcome back, '+ (me.name||'').split(' ')[0] +'!</h1><div class="page-sub">Riverside Plant — Lubrication Management &amp; Reliability</div>'));
   page.appendChild(head);
 
   const kpis = el('div','kpi-grid');
@@ -222,19 +228,16 @@ function renderDashboard(){
   const right = el('div');
   const roleCard = el('div','card');
   roleCard.appendChild(el('div','card-title','Your Access'));
-  roleCard.appendChild(el('div',null,'<div style="font-size:13px;color:var(--sub)">Functional role: <b style="color:var(--ink)">'+(myRole||'none assigned')+'</b></div>'));
+  const accessList = me.isAdmin ? '<span class="badge info">Administrator — full access</span>' :
+    (myFeatures.size ? [...myFeatures].map(k=>'<span class="badge ok" style="margin:2px">'+k+'</span>').join('') : '<span class="badge gray">No features enabled yet</span>');
+  roleCard.appendChild(el('div',null,'<div style="font-size:13px;color:var(--sub)">'+accessList+'</div>'));
   right.appendChild(roleCard);
-
-  const rolesSummary = el('div','card');
-  rolesSummary.appendChild(el('div','card-title','Team'));
-  if(!cache.roles.length){
-    rolesSummary.appendChild(emptyState('settings','No roles assigned','Assign roles under Settings.'));
-  } else {
-    rolesSummary.innerHTML += cache.roles.slice(0,6).map(r=>
-      '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;border-bottom:1px solid var(--line)"><span>'+personName(r.user_id)+'</span><span class="badge info">'+r.role+'</span></div>'
-    ).join('');
+  if(me.isAdmin){
+    const adminCard = el('div','card');
+    adminCard.appendChild(el('div','card-title','Administration'));
+    adminCard.appendChild(el('div',null,'<div style="font-size:12px;color:var(--sub)">Create users and manage feature access under <b>Settings</b>.</div>'));
+    right.appendChild(adminCard);
   }
-  right.appendChild(rolesSummary);
   grid.appendChild(right);
   page.appendChild(grid);
 }
@@ -279,7 +282,7 @@ function renderMasterPage(kind){
   const page = document.getElementById('page');
   const head = el('div','page-head');
   head.appendChild(el('div',null,'<h1>Assets</h1><div class="page-sub">Plant equipment, keyed by SAP Equipment Number</div>'));
-  if(canEditMasters()){
+  if(hasFeature('assets.edit')){
     const addBtn = el('button','btn', icon('plus')+' Add Asset');
     addBtn.onclick = ()=>openMasterModal(kind, null);
     head.appendChild(addBtn);
@@ -288,7 +291,7 @@ function renderMasterPage(kind){
 
   const list = cache.equipment;
   const card = el('div','card');
-  if(!list.length){ card.appendChild(emptyState('assets','No assets yet', canEditMasters()?'Click "Add Asset" to create your first one.':'Ask an Engineer or Administrator to add assets.')); page.appendChild(card); return; }
+  if(!list.length){ card.appendChild(emptyState('assets','No assets yet', hasFeature('assets.edit')?'Click "Add Asset" to create your first one.':'Ask your administrator for access.')); page.appendChild(card); return; }
 
   const wrap = el('div','tablewrap');
   const t = el('table');
@@ -309,7 +312,7 @@ function renderMasterPage(kind){
     const hist = el('button','icon-btn', icon('history')); hist.title='History';
     hist.onclick=()=>{ workOrderFilter = rec.sap_equipment_number; active='workorders'; render(); };
     tdAct.appendChild(hist);
-    if(canEditMasters()){
+    if(hasFeature('assets.edit')){
       const ed = el('button','icon-btn', icon('settings')); ed.title='Edit';
       ed.onclick=()=>openMasterModal(kind, rec);
       const del = el('button','icon-btn', icon('close')); del.title='Delete'; del.style.color='var(--bad)';
@@ -352,7 +355,7 @@ function renderPointsPage(){
   const page = document.getElementById('page');
   const head = el('div','page-head');
   head.appendChild(el('div',null,'<h1>Lubrication Points</h1><div class="page-sub">Plant &rarr; Area &rarr; Asset &rarr; Component &rarr; Lubrication Point</div>'));
-  if(canEditMasters()){
+  if(hasFeature('points.edit')){
     const addBtn = el('button','btn', icon('plus')+(pointsSubtab==='points'?' Add Lubrication Point':' Add Component'));
     addBtn.onclick = ()=> pointsSubtab==='points' ? openPointModal(null) : openComponentModal(null);
     head.appendChild(addBtn);
@@ -370,7 +373,7 @@ function renderPointsPage(){
   const card = el('div','card');
   if(pointsSubtab==='points'){
     const list = cache.points;
-    if(!list.length){ card.appendChild(emptyState('points','No lubrication points yet', canEditMasters()?'Click "Add Lubrication Point" to create your first one.':'Ask an Engineer or Administrator to add points.')); }
+    if(!list.length){ card.appendChild(emptyState('points','No lubrication points yet', hasFeature('points.edit')?'Click "Add Lubrication Point" to create your first one.':'Ask your administrator for access.')); }
     else {
       const wrap = el('div','tablewrap');
       const t = el('table');
@@ -381,7 +384,7 @@ function renderPointsPage(){
           '<td>'+(rec.lubricant_name||'—')+'</td><td>'+(rec.frequency||rec.running_hour_interval||rec.calendar_interval||'—')+'</td>'+
           '<td><span class="badge gray">Phase 3</span></td><td>'+statusBadge(rec.status)+'</td>';
         const tdAct = el('td'); tdAct.className='row-actions';
-        if(canEditMasters()){
+        if(hasFeature('points.edit')){
           const ed = el('button','icon-btn', icon('settings')); ed.onclick=()=>openPointModal(rec);
           const del = el('button','icon-btn', icon('close')); del.style.color='var(--bad)';
           del.onclick=async()=>{ if(confirm('Delete this lubrication point?')){ const {error}=await sb.from('lubrication_points').delete().eq('id',rec.id); if(error) alert(error.message); else { await loadAll(); render(); } } };
@@ -394,7 +397,7 @@ function renderPointsPage(){
     }
   } else {
     const list = cache.components;
-    if(!list.length){ card.appendChild(emptyState('points','No components yet', canEditMasters()?'Click "Add Component" to create your first one.':'Ask an Engineer or Administrator to add components.')); }
+    if(!list.length){ card.appendChild(emptyState('points','No components yet', hasFeature('points.edit')?'Click "Add Component" to create your first one.':'Ask your administrator for access.')); }
     else {
       const wrap = el('div','tablewrap');
       const t = el('table');
@@ -403,7 +406,7 @@ function renderPointsPage(){
         const tr = el('tr');
         tr.innerHTML = '<td>'+rec.name+'</td><td>'+(rec.equipment_number||'—')+'</td><td>'+(rec.type||'—')+'</td><td>'+(rec.criticality||'—')+'</td><td>'+statusBadge(rec.status)+'</td>';
         const tdAct = el('td'); tdAct.className='row-actions';
-        if(canEditMasters()){
+        if(hasFeature('points.edit')){
           const ed = el('button','icon-btn', icon('settings')); ed.onclick=()=>openComponentModal(rec);
           const del = el('button','icon-btn', icon('close')); del.style.color='var(--bad)';
           del.onclick=async()=>{ if(confirm('Delete this component?')){ const {error}=await sb.from('components').delete().eq('id',rec.id); if(error) alert(error.message); else { await loadAll(); render(); } } };
@@ -487,6 +490,7 @@ function renderWorkOrders(){
   head.appendChild(el('div',null,'<h1>Work Orders</h1><div class="page-sub">Recorded lubrication activities — every entry here represents completed work. Scheduled/open work orders arrive in a later phase.</div>'));
   const addBtn = el('button','btn', icon('plus')+' Record Activity');
   addBtn.onclick = ()=>openActivityModal(null);
+  addBtn.style.display = hasFeature('workorders.record') ? '' : 'none';
   head.appendChild(addBtn);
   page.appendChild(head);
 
@@ -517,7 +521,7 @@ function renderWorkOrderTable(host){
       '<td>'+(rec.activity_type||'—')+'</td><td>'+(rec.quantity?rec.quantity+' '+(rec.uom||''):'—')+'</td><td>'+fmtDate(rec.activity_date)+'</td>'+
       '<td><span class="badge ok">Completed</span></td>';
     const tdAct = el('td'); tdAct.className='row-actions';
-    if(canEditMasters()){
+    if(hasFeature('workorders.edit')){
       const ed = el('button','icon-btn', icon('settings')); ed.onclick=()=>openActivityModal(rec);
       const del = el('button','icon-btn', icon('close')); del.style.color='var(--bad)';
       del.onclick=async()=>{ if(confirm('Delete this activity record?')){ const {error}=await sb.from('activities').delete().eq('id',rec.id); if(error) alert(error.message); else { await loadAll(); render(); } } };
@@ -570,7 +574,7 @@ function renderInventory(){
   const page = document.getElementById('page');
   const head = el('div','page-head');
   head.appendChild(el('div',null,'<h1>Inventory</h1><div class="page-sub">Lubricant master data. Stock quantities, min levels and consumption tracking arrive in Phase 5.</div>'));
-  if(canEditMasters() && inventorySubtab==='lubricants'){
+  if(hasFeature('inventory.edit') && inventorySubtab==='lubricants'){
     const addBtn = el('button','btn', icon('plus')+' Add Lubricant');
     addBtn.onclick = ()=>openLubricantModal(null);
     head.appendChild(addBtn);
@@ -591,7 +595,7 @@ function renderInventory(){
     page.appendChild(card); return;
   }
   const list = cache.lubricants;
-  if(!list.length){ card.appendChild(emptyState('inventory','No lubricants yet', canEditMasters()?'Click "Add Lubricant" to create your first one.':'Ask an Engineer or Administrator to add lubricants.')); page.appendChild(card); return; }
+  if(!list.length){ card.appendChild(emptyState('inventory','No lubricants yet', hasFeature('inventory.edit')?'Click "Add Lubricant" to create your first one.':'Ask your administrator for access.')); page.appendChild(card); return; }
   const wrap = el('div','tablewrap');
   const t = el('table');
   t.appendChild(el('tr',null,'<th>Item Code</th><th>Product Name</th><th>Type</th><th>Manufacturer</th><th>UOM</th><th>Status</th><th></th>'));
@@ -600,7 +604,7 @@ function renderInventory(){
     tr.innerHTML = '<td>'+(rec.sap_material_code||'—')+'</td><td>'+rec.brand+' '+rec.product_name+'</td><td>'+(rec.lubricant_type||'—')+'</td>'+
       '<td>'+(rec.manufacturer||'—')+'</td><td>'+(rec.uom||'—')+'</td><td>'+statusBadge(rec.status)+'</td>';
     const tdAct = el('td'); tdAct.className='row-actions';
-    if(canEditMasters()){
+    if(hasFeature('inventory.edit')){
       const ed = el('button','icon-btn', icon('settings')); ed.onclick=()=>openLubricantModal(rec);
       const del = el('button','icon-btn', icon('close')); del.style.color='var(--bad)';
       del.onclick=async()=>{ if(confirm('Delete this lubricant?')){ const {error}=await sb.from('lubricants').delete().eq('id',rec.id); if(error) alert(error.message); else { await loadAll(); render(); } } };
@@ -654,7 +658,8 @@ function renderAudit(){
   push(cache.points, 'Lubrication Points', r=>'Point: '+r.point_name+' ('+r.equipment_number+')');
   push(cache.lubricants, 'Inventory', r=>r.brand+' '+r.product_name);
   push(cache.activities, 'Work Orders', r=>(r.activity_type||'Activity')+' — '+r.equipment_number);
-  push(cache.roles, 'Settings', r=>personName(r.user_id)+' \u2192 '+r.role);
+  // Feature-access changes (grants/revokes) aren't in this feed yet — Settings
+  // shows the current state; a full grant/revoke audit trail is a later addition.
   entries.sort((a,b)=>new Date(b.at)-new Date(a.at));
 
   const card = el('div','card');
@@ -671,61 +676,114 @@ function renderAudit(){
   wrap.appendChild(t); card.appendChild(wrap); page.appendChild(card);
 }
 
-// ============================== SETTINGS (users & roles) ==============================
-function renderSettings(){
+// ============================== SETTINGS (My Account + admin Users & Access) ==============================
+let adminUserList = [];
+async function renderSettings(){
   const page = document.getElementById('page');
-  page.appendChild(el('div','page-head','<h1>Settings</h1><div class="page-sub">Users, functional roles and access</div>'));
+  page.appendChild(el('div','page-head','<h1>Settings</h1><div class="page-sub">Your account'+(me.isAdmin?', plus user &amp; access administration':'')+'</div>'));
 
   const info = el('div','card');
-  info.appendChild(el('div','card-title','Your access'));
-  info.appendChild(el('div',null,'<div style="font-size:13px;color:var(--sub)">Functional role: <b style="color:var(--ink)">'+(myRole||'none assigned — ask an Administrator')+'</b></div>'));
+  info.appendChild(el('div','card-title','My Account'));
+  info.appendChild(el('div',null,'<div style="font-size:13px;color:var(--sub)">Signed in as <b style="color:var(--ink)">'+me.name+'</b>. '+
+    (me.isAdmin?'<span class="badge info">Administrator</span>':(myFeatures.size?'Enabled features: '+[...myFeatures].join(', '):'No features enabled yet — ask your administrator.'))+
+    '</div><div style="font-size:12px;color:var(--sub);margin-top:8px;">Use the "Change password" button in the top bar to update your own password anytime.</div>'));
   page.appendChild(info);
 
-  if(!canManageUsers()){
+  if(!me.isAdmin){
     const n = el('div','card');
-    n.appendChild(el('div','notice','Only Administrators can assign roles. This is enforced by the database itself (Postgres row-level security), not just this screen.'));
+    n.appendChild(el('div','notice','Only an Administrator can create users or change feature access. This is enforced by the database itself, not just this screen.'));
     page.appendChild(n);
-  } else {
-    const assign = el('div','card');
-    assign.appendChild(el('div','card-title','Assign a role'));
-    assign.appendChild(el('div',null,'<div style="font-size:12px;color:var(--sub);margin-bottom:8px;">Find the person\'s User UID in Supabase → Authentication → Users, then paste it below.</div>'));
-    const row = el('div','filter-bar');
-    const uidInput = el('input'); uidInput.placeholder='User UID';
-    const roleSel = el('select'); ROLES.forEach(r=>{ const o=el('option',null,r); o.value=r; roleSel.appendChild(o); });
-    row.appendChild(uidInput); row.appendChild(roleSel);
-    const btn = el('button','btn','Assign role');
-    btn.onclick = async ()=>{
-      const uid = uidInput.value.trim();
-      if(!uid){ alert('Enter a User UID.'); return; }
-      const {error} = await sb.from('user_roles').upsert({user_id:uid, role:roleSel.value, updated_at:new Date().toISOString(), updated_by:me.id});
-      if(error){ alert('Failed: '+error.message); return; }
-      uidInput.value=''; await loadAll(); render();
-    };
-    row.appendChild(btn); assign.appendChild(row);
-    page.appendChild(assign);
+    return;
   }
 
-  const list = el('div','card');
-  list.appendChild(el('div','card-title','Assigned roles ('+cache.roles.length+')'));
-  if(!cache.roles.length){ list.appendChild(emptyState('settings','No roles assigned yet','')); }
-  else {
-    const wrap = el('div','tablewrap');
-    const t = el('table');
-    t.appendChild(el('tr',null,'<th>Person</th><th>Role</th><th></th>'));
-    cache.roles.forEach(r=>{
-      const tr = el('tr');
-      tr.innerHTML = '<td>'+personName(r.user_id)+'</td><td><span class="badge info">'+r.role+'</span></td>';
-      const tdAct = el('td');
-      if(canManageUsers()){
-        const del = el('button','icon-btn', icon('close')); del.style.color='var(--bad)';
-        del.onclick=async()=>{ if(confirm('Remove this role assignment?')){ const {error}=await sb.from('user_roles').delete().eq('user_id',r.user_id); if(error) alert(error.message); else { await loadAll(); render(); } } };
-        tdAct.appendChild(del);
-      }
-      tr.appendChild(tdAct); t.appendChild(tr);
+  // ---- Admin: create user ----
+  const create = el('div','card');
+  create.appendChild(el('div','card-title','Create a user'));
+  create.appendChild(el('div',null,'<div style="font-size:12px;color:var(--sub);margin-bottom:8px;">There is no self-signup — this is the only way new accounts are created.</div>'));
+  const grid = el('div','grid2');
+  const nameW=el('div'); nameW.appendChild(el('label','field-label','Full name')); const nameI=el('input'); nameW.appendChild(nameI);
+  const emailW=el('div'); emailW.appendChild(el('label','field-label','Email *')); const emailI=el('input'); emailI.type='email'; emailW.appendChild(emailI);
+  const pwW=el('div'); pwW.appendChild(el('label','field-label','Temporary password (min 8 chars) *')); const pwI=el('input'); pwI.type='text'; pwW.appendChild(pwI);
+  grid.appendChild(nameW); grid.appendChild(emailW); grid.appendChild(pwW);
+  create.appendChild(grid);
+  const createBtn = el('button','btn','Create user');
+  createBtn.onclick = async ()=>{
+    if(!emailI.value.trim() || pwI.value.length<8){ alert('Email and an 8+ character password are required.'); return; }
+    createBtn.disabled = true;
+    const {data, error} = await sb.functions.invoke('admin-create-user', {
+      body: { email: emailI.value.trim(), password: pwI.value, full_name: nameI.value.trim() }
     });
-    wrap.appendChild(t); list.appendChild(wrap);
-  }
-  page.appendChild(list);
+    createBtn.disabled = false;
+    if(error || (data && data.error)){ alert('Failed: '+(data?.error || error.message)); return; }
+    nameI.value=''; emailI.value=''; pwI.value='';
+    alert('User created. Share the temporary password with them directly — have them change it after first login.');
+    await loadAdminUserList(); renderUsersTable(usersHost);
+  };
+  create.appendChild(document.createElement('br'));
+  create.appendChild(createBtn);
+  page.appendChild(create);
+
+  // ---- Admin: users & feature access ----
+  const listCard = el('div','card');
+  listCard.appendChild(el('div','card-title','Users &amp; Access'));
+  const usersHost = el('div');
+  listCard.appendChild(usersHost);
+  page.appendChild(listCard);
+  await loadAdminUserList();
+  renderUsersTable(usersHost);
+}
+async function loadAdminUserList(){
+  const {data} = await sb.from('profiles').select('id, full_name, email, is_admin').order('full_name');
+  adminUserList = data || [];
+}
+function renderUsersTable(host){
+  host.innerHTML = '';
+  if(!adminUserList.length){ host.appendChild(emptyState('settings','No users yet','')); return; }
+  const wrap = el('div','tablewrap');
+  const t = el('table');
+  t.appendChild(el('tr',null,'<th>Name</th><th>Email</th><th>Status</th><th></th>'));
+  adminUserList.forEach(u=>{
+    const tr = el('tr');
+    tr.innerHTML = '<td>'+(u.full_name||'—')+'</td><td>'+(u.email||'—')+'</td><td>'+
+      (u.is_admin?'<span class="badge info">Administrator</span>':'<span class="badge gray">Standard user</span>')+'</td>';
+    const tdAct = el('td');
+    if(!u.is_admin){
+      const btn = el('button','btn sec','Manage access');
+      btn.onclick = ()=>openFeatureModal(u);
+      tdAct.appendChild(btn);
+    }
+    tr.appendChild(tdAct);
+    t.appendChild(tr);
+  });
+  wrap.appendChild(t); host.appendChild(wrap);
+}
+async function openFeatureModal(u){
+  const {data:current} = await sb.from('user_features').select('feature_key, enabled').eq('user_id', u.id);
+  const currentMap = {}; (current||[]).forEach(r=>currentMap[r.feature_key]=r.enabled);
+  const body = el('div');
+  body.appendChild(el('div',null,'<div style="font-size:12px;color:var(--sub);margin-bottom:10px;">Toggle what <b>'+(u.full_name||u.email)+'</b> can do. Changes save immediately.</div>'));
+  const modules = {};
+  allFeatures.forEach(f=>{ (modules[f.module]=modules[f.module]||[]).push(f); });
+  Object.keys(modules).forEach(mod=>{
+    body.appendChild(el('div',null,'<div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;margin:10px 0 4px;">'+mod+'</div>'));
+    modules[mod].forEach(f=>{
+      const row = el('label');
+      row.style.cssText='display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;cursor:pointer;';
+      const cb = el('input'); cb.type='checkbox'; cb.style.cssText='width:auto;min-height:auto;';
+      cb.checked = !!currentMap[f.key];
+      cb.onchange = async ()=>{
+        const {error} = await sb.from('user_features').upsert({
+          user_id:u.id, feature_key:f.key, enabled:cb.checked, updated_at:new Date().toISOString(), updated_by:me.id
+        });
+        if(error){ alert('Failed: '+error.message); cb.checked=!cb.checked; }
+      };
+      row.appendChild(cb);
+      const txt = el('span'); txt.innerHTML = '<b>'+f.label+'</b><br><span style="color:var(--sub);font-size:11px;">'+(f.description||'')+'</span>';
+      row.appendChild(txt);
+      body.appendChild(row);
+    });
+  });
+  openModal('Manage access', body, null);
 }
 
 init();
