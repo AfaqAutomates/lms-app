@@ -1,19 +1,17 @@
 const sb = window.supabase.createClient(window.LMS_CONFIG.SUPABASE_URL, window.LMS_CONFIG.SUPABASE_ANON_KEY);
 
-const ACTIVITY_TYPES = ['Top-up','Oil replacement','Drain and refill','Greasing','Lubricant replenishment',
-  'Filter replacement','Sampling','Inspection','Flushing','Corrective lubrication','Emergency lubrication','Other'];
+const ACTIVITY_TYPES = ['Top-Up','Oil Replacement','Drain and Refill','Greasing','Lubricant Replenishment',
+  'Filter Replacement','Sampling','Inspection','Flushing','Corrective lubrication','Emergency Lubrication','Other'];
 
 const STATUS_OPTIONS = ['Active','Inactive'];
 const CRITICALITY_OPTIONS = ['High','Medium','Low'];
 const LUBRICATION_TYPES = [
-  'Grease','Oil','Oil Bath','Oil Circulation','Oil Mist','Splash Lubrication',
-  'Chain Lubrication','Dry Lubrication','Automatic Lubrication','Manual Lubrication',
-  'Centralized Lubrication','Air-Oil','Other'
+  'Grease','Oil','Oil Bath','Oil Circulation','Splash Lubrication','Dry Lubrication','Automatic Lubrication','Manual Lubrication','Other'
 ];
 
 const PAGES = [
   {id:'dashboard', label:'Dashboard', icon:'dashboard'},
-  {id:'assets', label:'Assets', icon:'assets'},
+  {id:'assets', label:'Equipment', icon:'assets'},
   {id:'points', label:'Lubrication Points', icon:'points'},
   {id:'workorders', label:'Work Orders', icon:'workorders'},
   {id:'oilanalysis', label:'Oil Analysis', icon:'oil'},
@@ -193,7 +191,7 @@ function openModal(title, bodyEl, onSave, saveLabel){
 function renderDashboard(){
   const page = document.getElementById('page');
   const head = el('div','page-head');
-  head.appendChild(el('div',null,'<h1>Welcome back, '+ (me.name||'').split(' ')[0] +'!</h1><div class="page-sub">Riverside Plant — Lubrication Management &amp; Reliability</div>'));
+  head.appendChild(el('div',null,'<h1>Welcome back, '+ (me.name||'').split(' ')[0] +'!</h1><div class="page-sub">Farooqia Plant — Lubrication Management &amp; Reliability</div>'));
   page.appendChild(head);
 
   const kpis = el('div','kpi-grid');
