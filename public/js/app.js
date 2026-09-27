@@ -1,11 +1,11 @@
 const sb = window.supabase.createClient(window.LMS_CONFIG.SUPABASE_URL, window.LMS_CONFIG.SUPABASE_ANON_KEY);
 
-const ACTIVITY_TYPES = ['Top-up','Oil replacement','Drain and refill','Greasing','Lubricant replenishment',
-  'Filter replacement','Sampling','Inspection','Flushing','Corrective lubrication','Emergency lubrication','Other'];
+const ACTIVITY_TYPES = ['Top-up','Oil Replacement','Drain and Refill','Greasing','Lubricant Replenishment',
+  'Filter Replacement','Sampling','Inspection','Flushing','Corrective lubrication','Emergency lubrication','Other'];
 
 const PAGES = [
   {id:'dashboard', label:'Dashboard', icon:'dashboard'},
-  {id:'assets', label:'Assets', icon:'assets'},
+  {id:'Equipment', label:'Equipment', icon:'Equipment'},
   {id:'points', label:'Lubrication Points', icon:'points'},
   {id:'workorders', label:'Work Orders', icon:'workorders'},
   {id:'oilanalysis', label:'Oil Analysis', icon:'oil'},
@@ -140,7 +140,7 @@ function render(){
   const page = document.getElementById('page');
   page.innerHTML = '';
   const renderers = {
-    dashboard: renderDashboard, assets: ()=>renderMasterPage('assets'), points: renderPointsPage,
+    dashboard: renderDashboard, Equipment: ()=>renderMasterPage('Equipment'), points: renderPointsPage,
     workorders: renderWorkOrders, oilanalysis: ()=>renderComingSoon('Oil Analysis','Manual lab-result entry, configurable limits and trend charts arrive in Phase 4.'),
     inventory: renderInventory, alerts: ()=>renderComingSoon('Alerts','Automatic alerts (overdue lubrication, abnormal oil analysis, low stock) arrive once Running Hours, Oil Analysis and Inventory levels are built.'),
     reports: ()=>renderComingSoon('Reports','Standardized monthly reports and analytics arrive in Phase 6, once the modules feeding them exist.'),
@@ -185,21 +185,21 @@ function openModal(title, bodyEl, onSave, saveLabel){
 function renderDashboard(){
   const page = document.getElementById('page');
   const head = el('div','page-head');
-  head.appendChild(el('div',null,'<h1>Welcome back, '+ (me.name||'').split(' ')[0] +'!</h1><div class="page-sub">Riverside Plant — Lubrication Management &amp; Reliability</div>'));
+  head.appendChild(el('div',null,'<h1>Welcome back, '+ (me.name||'').split(' ')[0] +'!</h1><div class="page-sub">Plant — Lubrication Management &amp; Reliability</div>'));
   page.appendChild(head);
 
   const kpis = el('div','kpi-grid');
   const totalPoints = cache.points.length;
   const activePoints = cache.points.filter(p=>(p.status||'Active').toLowerCase()!=='inactive').length;
-  const totalAssets = cache.equipment.length;
+  const totalEquipment = cache.equipment.length;
   const recentActs = cache.activities.filter(a=>{
     const d = new Date(a.activity_date); const now = new Date();
     return (now - d) / 86400000 <= 30;
   }).length;
 
-  kpis.appendChild(kpiCard('assets','Total Lubrication Points', totalPoints, activePoints+' active', 'var(--accent)','var(--accent-tint)'));
+  kpis.appendChild(kpiCard('Equipment','Total Lubrication Points', totalPoints, activePoints+' active', 'var(--accent)','var(--accent-tint)'));
   kpis.appendChild(kpiCard('workorders','Activities (Last 30 Days)', recentActs, 'recorded by your team', 'var(--ok)','var(--ok-tint)'));
-  kpis.appendChild(kpiCard('assets','Total Assets', totalAssets, 'in the equipment master', 'var(--info)','var(--info-tint)'));
+  kpis.appendChild(kpiCard('Equipment','Total Equipment', totalEquipment, 'in the equipment master', 'var(--info)','var(--info-tint)'));
   const dueCard = el('div','kpi muted');
   dueCard.innerHTML = '<div class="kpi-top"><div class="kpi-icon" style="background:var(--warn-tint);color:var(--warn)">'+icon('alerts')+'</div><div class="kpi-label">Due Soon / Overdue</div></div><div class="kpi-value">Coming in Phase 3</div><div class="kpi-sub">Activates once Running Hours tracking is built</div>';
   kpis.appendChild(dueCard);
@@ -260,9 +260,9 @@ function renderComingSoon(title, sub){
   page.appendChild(card);
 }
 
-// ============================== ASSETS (equipment) ==============================
+// ============================== Equipment (equipment) ==============================
 const MASTER_CONFIG = {
-  assets: {
+  Equipment: {
     table:'equipment', label:'Asset',
     columns: [
       ['sap_equipment_number','Asset ID'], ['description','Asset Name'], ['equipment_type','Type'],
@@ -281,8 +281,8 @@ function renderMasterPage(kind){
   const cfg = MASTER_CONFIG[kind];
   const page = document.getElementById('page');
   const head = el('div','page-head');
-  head.appendChild(el('div',null,'<h1>Assets</h1><div class="page-sub">Plant equipment, keyed by SAP Equipment Number</div>'));
-  if(hasFeature('assets.edit')){
+  head.appendChild(el('div',null,'<h1>Equipment</h1><div class="page-sub">Plant equipment, keyed by SAP Equipment Number</div>'));
+  if(hasFeature('Equipment.edit')){
     const addBtn = el('button','btn', icon('plus')+' Add Asset');
     addBtn.onclick = ()=>openMasterModal(kind, null);
     head.appendChild(addBtn);
@@ -291,7 +291,7 @@ function renderMasterPage(kind){
 
   const list = cache.equipment;
   const card = el('div','card');
-  if(!list.length){ card.appendChild(emptyState('assets','No assets yet', hasFeature('assets.edit')?'Click "Add Asset" to create your first one.':'Ask your administrator for access.')); page.appendChild(card); return; }
+  if(!list.length){ card.appendChild(emptyState('Equipment','No Equipment yet', hasFeature('Equipment.edit')?'Click "Add Asset" to create your first one.':'Ask your administrator for access.')); page.appendChild(card); return; }
 
   const wrap = el('div','tablewrap');
   const t = el('table');
@@ -312,7 +312,7 @@ function renderMasterPage(kind){
     const hist = el('button','icon-btn', icon('history')); hist.title='History';
     hist.onclick=()=>{ workOrderFilter = rec.sap_equipment_number; active='workorders'; render(); };
     tdAct.appendChild(hist);
-    if(hasFeature('assets.edit')){
+    if(hasFeature('Equipment.edit')){
       const ed = el('button','icon-btn', icon('settings')); ed.title='Edit';
       ed.onclick=()=>openMasterModal(kind, rec);
       const del = el('button','icon-btn', icon('close')); del.title='Delete'; del.style.color='var(--bad)';
@@ -653,7 +653,7 @@ function renderAudit(){
       record: labelFn(r),
     });
   });
-  push(cache.equipment, 'Assets', r=>r.sap_equipment_number+' — '+(r.description||''));
+  push(cache.equipment, 'Equipment', r=>r.sap_equipment_number+' — '+(r.description||''));
   push(cache.components, 'Lubrication Points', r=>'Component: '+r.name+' ('+r.equipment_number+')');
   push(cache.points, 'Lubrication Points', r=>'Point: '+r.point_name+' ('+r.equipment_number+')');
   push(cache.lubricants, 'Inventory', r=>r.brand+' '+r.product_name);
