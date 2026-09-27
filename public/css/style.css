@@ -155,3 +155,12 @@ tbody tr:hover{background:#fafbfc;}
 .auth-brand b{font-size:16px;display:block;}
 .auth-brand span{font-size:11px;color:var(--sub);}
 .auth-card input{margin-bottom:10px;}
+
+/* Master-data lookup and controlled field enhancements */
+.autocomplete{position:relative;width:100%}
+.autocomplete-input{width:100%}
+.autocomplete-menu{display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);z-index:1000;background:var(--panel,#fff);border:1px solid var(--border,#ddd);border-radius:8px;box-shadow:0 8px 20px rgba(0,0,0,.12);max-height:220px;overflow:auto}
+.autocomplete-option{display:block;width:100%;padding:9px 11px;border:0;background:transparent;text-align:left;cursor:pointer;color:inherit}
+.autocomplete-option:hover{background:var(--accent-tint,#eef6ff)}
+.field-label-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+.link-btn{border:0;background:transparent;color:var(--accent);cursor:pointer;font-size:12px;padding:0}

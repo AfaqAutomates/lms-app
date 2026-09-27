@@ -103,6 +103,7 @@ create table if not exists lubrication_points (
   calendar_interval text,
   status text default 'Active',
   special_instructions text,
+  criticality text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   created_by uuid references auth.users(id),
