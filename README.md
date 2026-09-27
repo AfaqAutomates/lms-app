@@ -171,10 +171,3 @@ Matches the phase plan already agreed:
 
 Each phase is just more tables in `db/schema.sql` and more tab logic in
 `public/js/app.js` — same deploy, no rebuild needed for the hosting part.
-
-
-## Master-data form updates
-- Equipment: removed Manufacturer, Model, and Serial Number from the form; Status and Lubrication Criticality are controlled dropdowns.
-- Components: SAP Equipment # is a searchable selection from existing equipment; Description was removed; Component Type remembers previous values; Criticality and Status are dropdowns.
-- Lubrication Points: SAP Equipment # and Component Name are restricted to existing master data; Point Name remembers previous values; Lubrication Type, Lubricant, Criticality, and Status use controlled selections. A permitted user can add a lubricant from the lubrication-point form.
-- Run `db/migrations/003_master_form_controls.sql` against an existing Supabase database before using the updated lubrication-point form.
