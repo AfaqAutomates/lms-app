@@ -1,11 +1,10 @@
 # Industrial Lubrication Management & Reliability System
 
-A real, standalone web app — independent of Claude — built on entirely free
-services. No servers to maintain, no monthly bill at plant scale.
+A real, standalone web app 
 
 ## Stack (all free tier)
-- **Database + Auth + security:** [Supabase](https://supabase.com) (free tier: 500MB database, unlimited API requests, built-in login, and — critically — Postgres Row Level Security, which enforces who can edit vs. view *inside the database itself*, not just in the page you're looking at)
-- **Hosting:** [Netlify](https://netlify.com) or [Vercel](https://vercel.com) (free tier, static sites) — or literally just open `public/index.html` on a shared drive for a first test
+- **Database + Auth + security:** [Supabase](https://supabase.com) 
+- **Hosting:** [Netlify](https://netlify.com) or [Vercel](https://vercel.com)
 - **Code:** plain HTML/CSS/JS, no build step, no npm install required
 
 ## Setup — about 15 minutes
