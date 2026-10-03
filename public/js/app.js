@@ -108,9 +108,7 @@ let editing = {};
 let workOrderFilter = '';
 let inventorySubtab = 'lubricants';
 let pointsSubtab = 'points';
-
-// ============================== AUTH ==============================
-async 
+ 
 // ============================== RUNNING HOURS TRACKER ==============================
 function renderRunningHours(){
   const page = document.getElementById('page');
