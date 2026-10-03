@@ -1,10 +1,11 @@
 # Industrial Lubrication Management & Reliability System
 
-A real, standalone web app 
+A real, standalone web app — independent of Claude — built on entirely free
+services. No servers to maintain, no monthly bill at plant scale.
 
 ## Stack (all free tier)
-- **Database + Auth + security:** [Supabase](https://supabase.com) 
-- **Hosting:** [Netlify](https://netlify.com) or [Vercel](https://vercel.com)
+- **Database + Auth + security:** [Supabase](https://supabase.com) (free tier: 500MB database, unlimited API requests, built-in login, and — critically — Postgres Row Level Security, which enforces who can edit vs. view *inside the database itself*, not just in the page you're looking at)
+- **Hosting:** [Netlify](https://netlify.com) or [Vercel](https://vercel.com) (free tier, static sites) — or literally just open `public/index.html` on a shared drive for a first test
 - **Code:** plain HTML/CSS/JS, no build step, no npm install required
 
 ## Setup — about 15 minutes
@@ -113,6 +114,61 @@ becomes a slide-out drawer (tap the menu icon).
 - **Oil Analysis, Alerts, Reports** — placeholder pages in the same design
   language, clearly labeled with which phase brings them to life
 
+
+## Stage B.1 update — Forms, Resource Tracking, Hierarchical Data Entry
+
+This major update adds:
+1. **Improved forms** — Equipment/Component/Lubrication Point modals with typeahead,
+   dropdowns (Status, Criticality), and dropdown-controlled field values
+2. **Running Hours tracking** — 36 plant resources (KILN01, COALM01, RM01, etc.)
+   with automatic cascading to linked equipment
+3. **Equipment-Resource linking** — each equipment can be linked to multiple
+   resources; when a resource's running hours update, all linked equipment auto-update
+4. **Lubricant master data** — reusable lubricant records with inline "Add Lubricant"
+   button during Lubrication Point entry
+5. **Typeahead autocomplete** — SAP Equipment #, Component names, Lubrication Point names,
+   Component Types suggest from history and linked data
+
+### Three database migrations to run:
+
+#### B.1.1 — Run first: `db/schema.sql` (if you haven't already from Stage A)
+#### B.1.2 — Run second: `db/migrations/002_admin_auth_and_features.sql`
+#### B.1.3 — Run third: `db/migrations/003_stage_b1_forms.sql`
+
+All three are idempotent (safe to re-run).
+
+### Setup after migrations:
+
+#### Admin Portal: Create users and grant feature access
+- Log in as `admin@lubrication.com` / `Admin@123` (change password immediately)
+- Go to **Settings** → create user accounts
+- For each user, toggle on features they can use
+
+#### Running Hours Tracker (NEW)
+- Go to **Running Hours** (new sidebar link)
+- Select a resource (KILN01, COALM01, RM01, etc.) and update its running hours
+- Any equipment linked to that resource auto-updates
+
+#### Equipment Entry (IMPROVED)
+- **Assets** → Add Asset
+- Now includes: SAP Equipment #, Description, Status (dropdown), Lubrication Criticality (dropdown)
+- Link equipment to one or more resources (checkboxes)
+
+#### Component Entry (IMPROVED)
+- **Lubrication Points** → Components tab → Add Component
+- SAP Equipment # has typeahead (searches from added equipment)
+- Component Name and Component Type have typeahead suggestions
+- Criticality & Status use dropdowns
+
+#### Lubrication Point Entry (IMPROVED)
+- **Lubrication Points** → Add Lubrication Point
+- Equipment typeahead (strict — only pre-added equipment)
+- Component dropdown (filtered to that equipment's components)
+- Lubrication Type dropdown (Oil, Grease, Automatic Lubricator, Circulating Oil System, Other)
+- Lubricant dropdown + inline **+ Add** button for creating new lubricants on-the-fly
+- All dropdowns (Status, Criticality) included
+
+---
 
 ## Stage A update — admin-only accounts, feature toggles
 
