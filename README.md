@@ -1,228 +1,208 @@
-# Industrial Lubrication Management & Reliability System
+# LubriTrack — Industrial Lubrication Management & Reliability System
 
-A real, standalone web app — independent of Claude — built on entirely free
-services. No servers to maintain, no monthly bill at plant scale.
+## Stage B.1 Complete — Forms, Running Hours, Hierarchical Data Entry
 
-## Stack (all free tier)
-- **Database + Auth + security:** [Supabase](https://supabase.com) (free tier: 500MB database, unlimited API requests, built-in login, and — critically — Postgres Row Level Security, which enforces who can edit vs. view *inside the database itself*, not just in the page you're looking at)
-- **Hosting:** [Netlify](https://netlify.com) or [Vercel](https://vercel.com) (free tier, static sites) — or literally just open `public/index.html` on a shared drive for a first test
-- **Code:** plain HTML/CSS/JS, no build step, no npm install required
+**Live Demo:** https://lms-app-coral-seven.vercel.app (update URL after deploying)  
+**GitHub:** https://github.com/AfaqAutomates/lms-app (update repo name as needed)
 
-## Setup — about 15 minutes
+### What's New in Stage B.1
 
-### 1. Create your free Supabase project
-1. Go to supabase.com → sign up (free) → "New project".
-2. Pick any name/region, set a database password (save it somewhere).
-3. Wait ~2 minutes for it to provision.
+1. **Redesigned Forms** — Equipment, Component, and Lubrication Point modals with:
+   - Typeahead autocomplete (SAP Equipment #, Component names, Point names)
+   - Dropdown selects (Status: Active/Inactive, Criticality: High/Medium/Low)
+   - Intelligent filtering (e.g., Component dropdown filtered by Equipment)
 
-### 2. Create the database tables
-1. In your Supabase project, open **SQL Editor** → **New query**.
-2. Paste the entire contents of `db/schema.sql` (in this project) and click **Run**.
-3. This creates every table (equipment, components, lubrication points,
-   lubricants, activities, roles) plus the security rules — all in one go.
+2. **Running Hours Tracker** — Manage 36 plant resources (KILN01, COALM01, RM01, etc.):
+   - Update running hours for each resource
+   - Auto-cascade updates to all equipment linked to that resource
 
-### 3. Connect the app to your project
-1. In Supabase: **Project Settings → API**.
-2. Copy the **Project URL** and the **anon public** key.
-3. Open `public/js/config.js` in this project and paste them in:
-   ```js
+3. **Equipment-Resource Linking** — Each equipment can link to one or more resources
+
+4. **Lubricant Master Data** — Reusable lubricant records with inline "Add Lubricant" button
+
+5. **Lubrication Types** — Dropdown: Oil, Grease, Automatic Lubricator, Circulating Oil System, Other
+
+### Tech Stack
+
+- **Frontend:** Plain HTML/CSS/JavaScript, PWA (no build step required)
+- **Backend:** Supabase (PostgreSQL) for data, RLS for access control
+- **Auth:** Supabase Auth (no self-signup, admin-only user creation)
+- **Hosting:** Vercel (auto-deploy from GitHub)
+
+### One-Time Setup (Read This Carefully)
+
+#### Step 1: Update Configuration
+
+1. Extract the zip
+2. Open `public/js/config.js`
+3. Paste your **actual** Supabase URL and anonymous key:
+   ```javascript
    window.LMS_CONFIG = {
-     SUPABASE_URL: "https://xxxxxxxx.supabase.co",
-     SUPABASE_ANON_KEY: "eyJhbGc...",
+     SUPABASE_URL: 'https://your-project.supabase.co',
+     SUPABASE_ANON_KEY: 'eyJhbG...'
    };
    ```
-   (These two values are meant to be public — they go in the browser. Real
-   security comes from the RLS policies in `db/schema.sql`, not from hiding
-   this key.)
+4. Save and commit to GitHub
 
-### 4. Turn on email sign-up (usually on by default)
-Supabase → **Authentication → Providers** → make sure **Email** is enabled.
-For a first test you can also disable "Confirm email" under
-**Authentication → Settings** so you don't need a working inbox to try it out
-— just remember to turn it back on before real plant use.
+**Important:** `config.js` resets when you re-zip the project. Always update it before pushing to GitHub.
 
-### 5. Deploy it — pick one
-- **Easiest:** go to app.netlify.com/drop and drag the whole `public` folder
-  onto the page. You get a live URL in seconds. Free forever for this size
-  of app.
-- **Also easy:** push this folder to a GitHub repo, then "New site from Git"
-  on Netlify or "New Project" on Vercel, pointing at the `public` folder.
-- **Zero deployment:** just double-click `public/index.html` to open it
-  locally, or put the `public` folder on a shared network drive at the
-  plant — works the same, just without a public URL.
+#### Step 2: Database Migrations
 
-### 6. First login
-1. Open your deployed URL → **Sign up** with your email/password.
-2. The **first person ever to sign up automatically becomes Administrator**
-   (see the schema's `handle_new_user` trigger) — so that's you.
-3. Start entering Equipment, Components, Lubrication Points, Lubricants,
-   and recording Activities.
+Run these SQL migrations in order via Supabase → SQL Editor:
 
-### 7. Install it as a mobile app (optional but recommended)
-The app is a PWA (Progressive Web App) — it can be "installed" like a real
-app, with its own icon, no browser bar, full-screen:
-- **Android (Chrome):** open the deployed URL → tap the ⋮ menu →
-  **"Add to Home screen" / "Install app"**.
-- **iPhone (Safari):** open the deployed URL → tap the Share icon →
-  **"Add to Home Screen"**.
+1. **`db/schema.sql`** — Core tables (equipment, components, lubrication_points, etc.)
+2. **`db/migrations/002_admin_auth_and_features.sql`** — Admin auth, feature toggles, seed admin
+3. **`db/migrations/003_stage_b1_forms.sql`** — New B.1 tables (resources, lubricants_master, etc.)
 
-No app store, no APK, no review process — same free deploy, just installed
-like an app. It also caches the page shell so it still *opens* without
-signal (recording new data still needs a live connection to reach Supabase).
+Each is idempotent — safe to re-run if you get "table already exists" errors.
 
-## Assigning roles to your team
-Anyone who signs up starts with **no functional role** (view-only, per spec
-§53) until an Administrator assigns one. Right now, the in-app "Assign a
-role" box can't look someone up by email directly — Supabase intentionally
-keeps `auth.users` (which holds emails) off-limits to the browser, for
-privacy. Two ways to assign roles for now:
+**Seed Admin Account:**
+- Email: `admin@lubrication.com`
+- Password: `Admin@123`
+- **Change this password immediately after first login.**
 
-**Quick way (fine for a small team):** in Supabase, go to
-**Authentication → Users**, find the person, copy their **User UID**. Then
-go to **Table Editor → user_roles → Insert row**, paste that UID into
-`user_id`, and pick their `role`.
+#### Step 3: GitHub & Vercel
 
-**Proper way (worth doing once your team grows):** create a small Supabase
-Edge Function that looks up a user by email using the service-role key
-(kept server-side, never in the browser) and returns their UID to the
-Administrator's screen. Ask me and I'll write that function for you — it's
-about 15 lines of code, one extra free Supabase feature (Edge Functions
-have a generous free tier too).
+1. Create a GitHub repo: `https://github.com/your-org/lms-app`
+2. Push all files from this zip
+3. Connect Vercel to GitHub → auto-deploys on every push
+4. Once deployed, update the demo link at the top of this README
 
-## What's built so far
-The app is now styled as **LubriTrack** — a dark navy sidebar, KPI dashboard,
-compact status-badge tables, and a consistent modal-based add/edit pattern
-across every module, matching the design brief. On phones the sidebar
-becomes a slide-out drawer (tap the menu icon).
+#### Step 4: Test
 
-- **Dashboard** — real KPI cards (total lubrication points, activities in
-  the last 30 days, total assets), recent activity feed, team roles. The
-  "Due Soon / Overdue" KPI is intentionally shown as "Coming in Phase 3" —
-  it needs Running Hours tracking to be real, so it's not faked.
-- **Assets** (Equipment master) — add/edit/delete via modal, lubrication
-  point count per asset, status badges, gated to Engineer/Administrator
-- **Lubrication Points** — with a Components sub-tab, same pattern
-- **Work Orders** — currently shows recorded lubrication *activities*
-  (completed work), open to every signed-in user to record; edit/delete
-  restricted to Engineer/Administrator. True open/in-progress/scheduled
-  work orders are a real feature addition for a later phase.
-- **Inventory** — Lubricants master data (Greases/Filters/Other Supplies
-  sub-tabs are placeholders until full inventory/stock tracking, Phase 5)
-- **Audit History** — real, built from every table's created/updated
-  timestamps — not a placeholder
-- **Settings** — role assignment, enforced by the database (Postgres RLS)
-- **Oil Analysis, Alerts, Reports** — placeholder pages in the same design
-  language, clearly labeled with which phase brings them to life
+Sign in as `admin@lubrication.com` and:
 
-
-## Stage B.1 update — Forms, Resource Tracking, Hierarchical Data Entry
-
-This major update adds:
-1. **Improved forms** — Equipment/Component/Lubrication Point modals with typeahead,
-   dropdowns (Status, Criticality), and dropdown-controlled field values
-2. **Running Hours tracking** — 36 plant resources (KILN01, COALM01, RM01, etc.)
-   with automatic cascading to linked equipment
-3. **Equipment-Resource linking** — each equipment can be linked to multiple
-   resources; when a resource's running hours update, all linked equipment auto-update
-4. **Lubricant master data** — reusable lubricant records with inline "Add Lubricant"
-   button during Lubrication Point entry
-5. **Typeahead autocomplete** — SAP Equipment #, Component names, Lubrication Point names,
-   Component Types suggest from history and linked data
-
-### Three database migrations to run:
-
-#### B.1.1 — Run first: `db/schema.sql` (if you haven't already from Stage A)
-#### B.1.2 — Run second: `db/migrations/002_admin_auth_and_features.sql`
-#### B.1.3 — Run third: `db/migrations/003_stage_b1_forms.sql`
-
-All three are idempotent (safe to re-run).
-
-### Setup after migrations:
-
-#### Admin Portal: Create users and grant feature access
-- Log in as `admin@lubrication.com` / `Admin@123` (change password immediately)
-- Go to **Settings** → create user accounts
-- For each user, toggle on features they can use
-
-#### Running Hours Tracker (NEW)
-- Go to **Running Hours** (new sidebar link)
-- Select a resource (KILN01, COALM01, RM01, etc.) and update its running hours
-- Any equipment linked to that resource auto-updates
-
-#### Equipment Entry (IMPROVED)
-- **Assets** → Add Asset
-- Now includes: SAP Equipment #, Description, Status (dropdown), Lubrication Criticality (dropdown)
-- Link equipment to one or more resources (checkboxes)
-
-#### Component Entry (IMPROVED)
-- **Lubrication Points** → Components tab → Add Component
-- SAP Equipment # has typeahead (searches from added equipment)
-- Component Name and Component Type have typeahead suggestions
-- Criticality & Status use dropdowns
-
-#### Lubrication Point Entry (IMPROVED)
-- **Lubrication Points** → Add Lubrication Point
-- Equipment typeahead (strict — only pre-added equipment)
-- Component dropdown (filtered to that equipment's components)
-- Lubrication Type dropdown (Oil, Grease, Automatic Lubricator, Circulating Oil System, Other)
-- Lubricant dropdown + inline **+ Add** button for creating new lubricants on-the-fly
-- All dropdowns (Status, Criticality) included
+1. Go to **Settings** → create a test user
+2. Enable "Edit Assets" feature for that user
+3. Test **Assets** tab → Add Asset
+4. Test **Lubrication Points** tab → Add Lubrication Point
+5. Test **Running Hours** tab → update KILN01 running hours
+6. Verify all dropdowns and typeahead work
 
 ---
 
-## Stage A update — admin-only accounts, feature toggles
+## Usage Guide
 
-This adds real Admin Portal foundations: no self-signup, a seeded
-Administrator account, and per-user feature toggles (replacing the old
-role system). Three things to do, once:
+### Dashboard
+- Overview of total equipment, points, resources, activities
+- Your access level displayed
 
-### A1. Run the migration
-In Supabase SQL Editor, run `db/migrations/002_admin_auth_and_features.sql`
-(after the original `db/schema.sql`, which you've already run). This:
-- adds `is_admin` + `email` to profiles
-- creates `features` / `user_features` tables and the permission functions
-- rewrites the masters' security rules to check per-user feature toggles
-- seeds the admin account: **admin@lubrication.com / Admin@123**
+### Assets (Equipment)
+- Add/edit/delete equipment
+- Set Status (Active/Inactive) and Lubrication Criticality (High/Medium/Low)
+- Typeahead search by SAP Equipment #
 
-**Change that password immediately after your first login** — it sits in
-this SQL file in plain text (that's what was asked for; just don't leave
-it that way).
+### Lubrication Points
+- **Points tab:** Add lubrication points with typeahead for equipment and component
+- **Components tab:** Add components with typeahead for equipment and component type
+- Link to lubricant master, set lubrication type (Oil/Grease/etc.)
 
-### A2. Turn off self-signup in Supabase
-Dashboard → **Authentication → Sign In / Providers** (or **Authentication →
-Settings**, layout varies) → find **"Allow new users to sign up"** → turn
-it **off**. This is a dashboard setting, not something the SQL/code can
-control.
+### Running Hours (NEW)
+- Select a resource (KILN01, COALM01, etc.)
+- Enter new running hours
+- Click "Update" → automatically updates all equipment linked to that resource
 
-### A3. Deploy the admin-create-user Edge Function
-This is the one piece that needs elevated privileges (creating a login for
-someone), so it runs as a small serverless function rather than in the
-browser. Easiest path — no command line needed:
-1. Supabase Dashboard → **Edge Functions** → **"Deploy a new function"**.
-2. Name it exactly `admin-create-user`.
-3. Paste in the contents of `supabase/functions/admin-create-user/index.ts`.
-4. Deploy. Supabase automatically provides the service-role key as an
-   environment secret inside the function — you don't paste it anywhere.
+### Work Orders
+- View recorded activities (created in other modules)
 
-(If you'd rather use the CLI: `supabase functions deploy admin-create-user`
-after `supabase login` and `supabase link`.)
+### Inventory
+- View all lubricants in the master database
 
-### What changes for your team
-- Log in as `admin@lubrication.com` / `Admin@123` first.
-- Go to **Settings** → create real user accounts (no one else can sign
-  themselves up).
-- For each user, click **"Manage access"** and toggle on whatever they
-  should be able to do — everyone starts with nothing enabled.
-- Everyone (including the admin) can change their own password anytime via
-  **"Change password"** in the top bar.
+### Audit History
+- View all changes across the system (created/updated records)
 
-## What's next
-Matches the phase plan already agreed:
-- Running hours (history, anomaly detection, replacement-due calculations)
-- Oil analysis (manual entry, configurable limits, trends)
-- Procurement + inventory/stock
-- Dashboard + monthly report export (PDF/Excel)
-- SAP Excel import framework
+### Settings (Admin Only)
+- Create users and assign feature access per-user
+- Users cannot access features unless admin enables them
 
-Each phase is just more tables in `db/schema.sql` and more tab logic in
-`public/js/app.js` — same deploy, no rebuild needed for the hosting part.
+---
+
+## Feature Flags (Configurable Per-User)
+
+| Feature Key | Module | Label |
+|---|---|---|
+| `assets.edit` | Assets | Edit Assets |
+| `points.edit` | Lubrication Points | Edit Lubrication Points |
+| `workorders.record` | Work Orders | Record Activities |
+| `workorders.edit` | Work Orders | Edit Activities |
+| `inventory.edit` | Inventory | Edit Inventory |
+
+---
+
+## File Structure
+
+```
+lms-app/
+├── db/
+│   ├── schema.sql                   — Core schema (run first)
+│   └── migrations/
+│       ├── 002_admin_auth_and_features.sql
+│       └── 003_stage_b1_forms.sql   (running hours, resources, lubricants_master)
+├── public/
+│   ├── index.html
+│   ├── css/style.css
+│   ├── js/
+│   │   ├── app.js                   (complete, no patching)
+│   │   ├── config.js                (INSERT YOUR SUPABASE CREDENTIALS)
+│   │   └── icons.js
+│   ├── manifest.json
+│   ├── sw.js
+│   └── icons/
+├── supabase/
+│   └── functions/
+│       └── admin-create-user/
+│           └── index.ts             (Edge Function for user creation)
+└── README.md
+```
+
+---
+
+## Key Decisions (v2 Architecture)
+
+✅ **No self-signup** — Admin creates all users  
+✅ **Feature toggles** — Per-user access control (not roles)  
+✅ **Config-driven** — All admin-editable via UI (no hardcoded values)  
+✅ **Portability** — Standard PostgreSQL, no vendor lock-in  
+✅ **PWA** — Offline-ready (service worker included)  
+
+---
+
+## Troubleshooting
+
+**Blank page?**
+- Check browser console (F12)
+- Verify `config.js` has your real Supabase credentials
+- Hard refresh: Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac)
+
+**Forms not showing?**
+- Make sure migration 003 ran successfully
+- Check Supabase SQL Editor history for errors
+
+**"Equipment not appearing" in typeahead?**
+- Add equipment first (Assets tab), then components use that list
+- Refresh the form by clicking away and back
+
+**"Resources missing" from Running Hours?**
+- Migration 003 seeds 36 resources automatically
+- If missing, re-run migration 003
+
+---
+
+## What's Next (Phase B.2)
+
+- Normalize plant hierarchy → Plant/Area/System as real tables
+- Equipment belongs to Area → belongs to Plant
+- Running hours and due-date calculations become location-aware
+- Filter dashboard by plant/area
+
+---
+
+## Support
+
+For issues or questions:
+1. Check this README first
+2. Review the deployment guide in the zip root
+3. Check browser console for JavaScript errors
+4. Review Supabase SQL Editor history for migration errors
+
+Good luck! 🚀
